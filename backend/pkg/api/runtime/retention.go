@@ -5,45 +5,28 @@ import (
 	"time"
 )
 
-// Retention pruning for the instance tables, which otherwise only ever grow.
-// Off by default because it deletes irreversibly; DryRun reports what a real
-// pass would remove.
-
 const (
-	// Bounded so a DELETE does not hold row locks across instance_application,
-	// which every Omaha check-in writes.
 	defaultRetentionBatchSize = 1000
 
-	// A large backlog is worked off over successive runs.
 	maxRetentionBatches = 1000
 )
 
-// RetentionConfig describes what to prune. A zero duration disables that
-// category, which is the default.
 type RetentionConfig struct {
-	// Instances prunes by last check-in, falling back to created_ts. The child
-	// tables cascade, so deleting an instance takes its history with it.
 	Instances time.Duration
 
-	// History bounds the history of a still-reporting machine.
 	History time.Duration
 
-	// Stats prunes instance_stats, an hourly time series.
 	Stats time.Duration
 
-	// DryRun counts what would be removed and removes nothing.
 	DryRun bool
 
-	// BatchSize overrides defaultRetentionBatchSize when positive.
 	BatchSize int
 }
 
-// Enabled reports whether any category is configured to prune.
 func (c RetentionConfig) Enabled() bool {
 	return c.Instances > 0 || c.History > 0 || c.Stats > 0
 }
 
-// RetentionReport counts the rows removed (or, in dry-run, matched) per table.
 type RetentionReport struct {
 	Instances            int64
 	InstanceStatusEvents int64
@@ -52,14 +35,10 @@ type RetentionReport struct {
 	DryRun               bool
 }
 
-// Total returns the number of rows across all categories. Rows removed by
-// cascade are not counted: only the instance row itself is.
 func (r RetentionReport) Total() int64 {
 	return r.Instances + r.InstanceStatusEvents + r.Events + r.Stats
 }
 
-// PruneOldData applies the retention policy once, in bounded batches so it can
-// run alongside normal traffic.
 func (s *Service) PruneOldData(cfg RetentionConfig) (*RetentionReport, error) {
 	report := &RetentionReport{DryRun: cfg.DryRun}
 
@@ -122,7 +101,6 @@ func (s *Service) PruneOldData(cfg RetentionConfig) (*RetentionReport, error) {
 	}
 
 	if cfg.Stats > 0 {
-		// No surrogate key, so batches are addressed by ctid.
 		n, err := s.pruneBatched(cfg, batch,
 			`SELECT count(*) FROM instance_stats WHERE timestamp < now() - $1::interval`,
 			`DELETE FROM instance_stats WHERE ctid IN (
@@ -139,8 +117,6 @@ func (s *Service) PruneOldData(cfg RetentionConfig) (*RetentionReport, error) {
 	return report, nil
 }
 
-// pruneBatched runs deleteSQL in batches until it stops matching rows, or just
-// evaluates countSQL when the config is in dry-run mode.
 func (s *Service) pruneBatched(cfg RetentionConfig, batch int, countSQL, deleteSQL string, age time.Duration) (int64, error) {
 	interval := postgresInterval(age)
 
@@ -170,8 +146,6 @@ func (s *Service) pruneBatched(cfg RetentionConfig, batch int, countSQL, deleteS
 	return total, nil
 }
 
-// postgresInterval renders a duration in whole seconds, so the value is locale
-// and IntervalStyle independent.
 func postgresInterval(d time.Duration) string {
 	return fmt.Sprintf("%d seconds", int64(d.Seconds()))
 }

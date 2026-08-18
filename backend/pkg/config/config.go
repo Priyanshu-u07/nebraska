@@ -36,8 +36,6 @@ type Config struct {
 	ServerPort          uint   `koanf:"port"`
 	RollbackDBTo        string `koanf:"rollback-db-to"`
 
-	// Data retention. All empty/zero by default, which disables pruning, so an
-	// upgrade never starts deleting an existing deployment's history.
 	InstanceRetention string `koanf:"instance-retention"`
 	HistoryRetention  string `koanf:"history-retention"`
 	StatsRetention    string `koanf:"stats-retention"`
@@ -66,8 +64,6 @@ type Config struct {
 	CACertPool        *x509.CertPool
 }
 
-// Retention holds the parsed data-retention windows. A zero duration means
-// that category is not pruned.
 type Retention struct {
 	Instances time.Duration
 	History   time.Duration
@@ -75,12 +71,10 @@ type Retention struct {
 	DryRun    bool
 }
 
-// Enabled reports whether any category is configured to prune.
 func (r Retention) Enabled() bool {
 	return r.Instances > 0 || r.History > 0 || r.Stats > 0
 }
 
-// Retention parses the retention flags.
 func (c *Config) Retention() (Retention, error) {
 	var r Retention
 	var err error
@@ -99,10 +93,6 @@ func (c *Config) Retention() (Retention, error) {
 	return r, nil
 }
 
-// parseRetention accepts anything time.ParseDuration does, plus a plain day
-// suffix: retention windows are naturally expressed in days, and "2160h" is
-// not recognisably 90 days to whoever reads the deployment manifest next. An
-// empty value or "0" disables the category.
 func parseRetention(value string) (time.Duration, error) {
 	value = strings.TrimSpace(value)
 	if value == "" || value == "0" {
@@ -174,8 +164,6 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Fail at startup rather than at the first pruning tick an hour later,
-	// where the operator would not be watching.
 	if _, err := c.Retention(); err != nil {
 		return err
 	}

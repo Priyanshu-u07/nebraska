@@ -13,8 +13,6 @@ import (
 	"github.com/flatcar/nebraska/backend/pkg/api/types"
 )
 
-// retentionFixture builds an app/channel/group and registers n instances,
-// returning the group and the instance IDs.
 func retentionFixture(t *testing.T, a interface{ Close() }, as interface {
 	AddTeam(*types.Team) (*types.Team, error)
 	AddApp(*types.Application) (*types.Application, error)
@@ -53,7 +51,6 @@ func retentionFixture(t *testing.T, a interface{ Close() }, as interface {
 	return tGroup, ids
 }
 
-// age backdates an instance's last check-in so it looks abandoned.
 func (s *Service) ageInstance(t *testing.T, instanceID string, d time.Duration) {
 	t.Helper()
 	_, err := s.db.Exec(
@@ -80,8 +77,6 @@ func TestPruneOldDataDisabledByDefault(t *testing.T) {
 
 	before := rs.countInstances(t)
 
-	// A zero config must be a no-op: an upgrade should never start deleting
-	// an existing deployment's history.
 	report, err := rs.PruneOldData(RetentionConfig{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), report.Total())
@@ -125,14 +120,12 @@ func TestPruneOldDataRemovesAbandonedInstances(t *testing.T) {
 	assert.Equal(t, int64(2), report.Instances)
 	assert.Equal(t, before-2, rs.countInstances(t))
 
-	// The three instances still checking in must survive.
 	for _, id := range ids[2:] {
 		var n int
 		require.NoError(t, rs.db.QueryRow(`SELECT count(*) FROM instance WHERE id = $1`, id).Scan(&n))
 		assert.Equal(t, 1, n, "a live instance must not be pruned")
 	}
 
-	// Running again must find nothing left to do.
 	report, err = rs.PruneOldData(RetentionConfig{Instances: 90 * 24 * time.Hour})
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), report.Instances)
@@ -146,7 +139,6 @@ func TestPruneOldDataCascadesToInstanceHistory(t *testing.T) {
 	tGroup, ids := retentionFixture(t, a, adminSvc(a), rs, 2)
 	doomed := ids[0]
 
-	// Give the instance some history, then abandon it.
 	require.NoError(t, rs.updateInstanceStatus(doomed, tGroup.ApplicationID, types.InstanceStatusDownloading))
 	require.NoError(t, rs.updateInstanceStatus(doomed, tGroup.ApplicationID, types.InstanceStatusComplete))
 
@@ -160,8 +152,6 @@ func TestPruneOldDataCascadesToInstanceHistory(t *testing.T) {
 	_, err := rs.PruneOldData(RetentionConfig{Instances: 90 * 24 * time.Hour})
 	require.NoError(t, err)
 
-	// instance_status_history references instance(id) on delete cascade, so
-	// deleting the instance must take its history with it.
 	var historyAfter, appRows int
 	require.NoError(t, rs.db.QueryRow(
 		`SELECT count(*) FROM instance_status_history WHERE instance_id = $1`, doomed).Scan(&historyAfter))
@@ -177,8 +167,6 @@ func TestPruneOldDataBatching(t *testing.T) {
 	defer a.Close()
 	rs := runtimeSvc(a)
 
-	// More instances than the batch size, so the loop has to run more than
-	// once to clear them.
 	_, ids := retentionFixture(t, a, adminSvc(a), rs, 7)
 	for _, id := range ids {
 		rs.ageInstance(t, id, 200*24*time.Hour)
@@ -193,8 +181,6 @@ func TestPruneOldDataBatching(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), report.Instances, "batching must not lose or double-count rows")
 
-	// Counted relative to the starting total: the test database is seeded
-	// with sample instances that are still checking in and must survive.
 	assert.Equal(t, before-7, rs.countInstances(t))
 	for _, id := range ids {
 		var n int

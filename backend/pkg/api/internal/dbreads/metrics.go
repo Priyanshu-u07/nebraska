@@ -8,12 +8,6 @@ import (
 )
 
 var (
-	// Active instances per application, version, channel and arch.
-	//
-	// The window matches the UI, which also applies it. The LEFT JOIN keeps
-	// instances whose group lost its channel (channel_id is "on delete set
-	// null"). arch is needed because migration 0008 reuses the amd64 channel
-	// names for arm64.
 	appInstancesPerChannelMetricSQL = fmt.Sprintf(`
 SELECT a.name AS app_name, ia.version AS version,
        COALESCE(c.name, 'none') AS channel_name, c.arch AS arch,
@@ -38,9 +32,6 @@ GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3
 `, validityInterval, ignoreFakeInstanceCondition("ia.instance_id"))
 
-	// Failed UpdateComplete events (type 3, result 0) in the recent window, so a
-	// recovered fleet stops reporting. The group comes from instance_application
-	// because the event only records the application.
 	failedUpdatesSQL = fmt.Sprintf(`
 SELECT a.name AS app_name, g.name AS group_name, count(*) AS fail_count
 FROM event e
@@ -55,16 +46,6 @@ GROUP BY 1, 2
 ORDER BY 1, 2
 `, failedUpdatesInterval, ignoreFakeInstanceCondition("e.instance_id"))
 
-	// The whole-fleet form of GetGroupUpdatesStats: one pass, not one query per
-	// group.
-	//
-	// The policy intervals are per-group columns, so they are read from the row
-	// and cast to interval rather than being interpolated. Effective values come
-	// from COALESCE(group_local override, groups default), matching groupsQuery.
-	//
-	// Only groups with updates enabled are reported, both because rollout
-	// progress is meaningless for a group that never grants updates and to keep
-	// the series count down.
 	groupRolloutMetricSQL = fmt.Sprintf(`
 SELECT
 	a.name AS app_name,
@@ -102,10 +83,6 @@ ORDER BY 1, 2, 3
 `, validityInterval, ignoreFakeInstanceCondition("ia.instance_id"))
 )
 
-// failedUpdatesInterval is the window over which update failures are counted
-// for the nebraska_failed_updates metric. It matches validityInterval, the
-// window the dashboard uses to decide whether an instance is still active, so
-// the failure count and the instance counts describe the same set of machines.
 const failedUpdatesInterval = validityInterval
 
 func (q *Queries) GetAppInstancesPerChannelMetrics() ([]types.AppInstancesPerChannelMetric, error) {
@@ -129,8 +106,6 @@ func (q *Queries) GetAppInstancesPerChannelMetrics() ([]types.AppInstancesPerCha
 	return metrics, nil
 }
 
-// GetAppInstancesPerOEMMetrics returns instance counts grouped by application,
-// version and reported OEM/platform.
 func (q *Queries) GetAppInstancesPerOEMMetrics() ([]types.AppInstancesPerOEMMetric, error) {
 	var metrics []types.AppInstancesPerOEMMetric
 	rows, err := q.db.Queryx(appInstancesPerOEMMetricSQL)
@@ -173,8 +148,6 @@ func (q *Queries) GetFailedUpdatesMetrics() ([]types.FailedUpdatesMetric, error)
 	return metrics, nil
 }
 
-// GetGroupRolloutMetrics returns rollout progress counters for every group that
-// has updates enabled.
 func (q *Queries) GetGroupRolloutMetrics() ([]types.GroupRolloutMetric, error) {
 	var metrics []types.GroupRolloutMetric
 	rows, err := q.db.Queryx(groupRolloutMetricSQL)

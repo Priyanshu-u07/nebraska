@@ -26,9 +26,6 @@ var (
 			"application",
 			"version",
 			"channel",
-			// Channel names are only unique per architecture, so amd64 and
-			// arm64 channels are both called "stable". Without this label the
-			// two fleets are reported as one.
 			"arch",
 		},
 	)
@@ -58,12 +55,6 @@ var (
 		},
 	)
 
-	// Rollout progress. These mirror the UpdatesStats that Nebraska already
-	// computes to enforce update policy, which until now were only ever used
-	// internally and never exposed. Reported only for groups with updates
-	// enabled: rollout progress is meaningless for a group that never grants
-	// updates, and skipping them keeps the series count proportional to the
-	// number of groups actually rolling out.
 	newRolloutGauge = func(name, help string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -190,14 +181,6 @@ func RegisterAndInstrument(api *api.API) error {
 }
 
 // calculateMetrics calculates the application metrics and updates the respective metric.
-//
-// Every gauge vector is Reset() before being repopulated. Set() only touches
-// the series for the labels it is given; it does not retire a series that
-// existed on a previous tick and is absent from this one. Without the reset a
-// stale series freezes at its last value until the process restarts, which
-// happens routinely: an instance moving from one version to the next during a
-// rollout, an application or group being renamed, a channel being deleted. The
-// visible symptom is a total that keeps climbing past the real fleet size.
 func calculateMetrics(api *api.API) error {
 	aipcMetrics, err := api.GetAppInstancesPerChannelMetrics()
 	if err != nil {

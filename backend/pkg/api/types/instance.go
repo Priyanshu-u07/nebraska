@@ -43,12 +43,8 @@ const (
 // Instance represents an instance running one or more applications for which
 // Nebraska can provide updates.
 type Instance struct {
-	ID string `db:"id" json:"id"`
-	IP string `db:"ip" json:"ip"`
-	// OEM is the platform the instance reports on check-in (for example
-	// "azure", "ami" or "vmware"). It is always serialized: an empty string
-	// means the instance reported no OEM, whereas an absent key means the
-	// server predates this field.
+	ID           string              `db:"id" json:"id"`
+	IP           string              `db:"ip" json:"ip"`
 	OEM          string              `db:"oem" json:"oem"`
 	AlephVersion string              `db:"aleph_version" json:"aleph_version"`
 	CreatedTs    time.Time           `db:"created_ts" json:"created_ts"`

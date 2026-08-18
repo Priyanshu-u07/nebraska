@@ -15,23 +15,16 @@ import (
 	"github.com/flatcar/nebraska/backend/pkg/logger"
 )
 
-// Query timing at the sql/driver level, so it covers every statement including
-// the Omaha hot path and anything inside a transaction.
-// Off by default; enable with NEBRASKA_DB_PROFILING=true.
-
 const defaultSlowQueryThreshold = 250 * time.Millisecond
 
 var pl = logger.New("dbprofiling")
 
-// ProfilingConfig configures query profiling.
 type ProfilingConfig struct {
-	Enabled bool
-	// Zero means defaultSlowQueryThreshold.
+	Enabled            bool
 	SlowQueryThreshold time.Duration
 }
 
 var (
-	// Adjustable at runtime, so the threshold can be tightened without a restart.
 	slowQueryThresholdNanos atomic.Int64
 
 	queryDuration = prometheus.NewHistogramVec(
@@ -39,8 +32,7 @@ var (
 			Namespace: "nebraska",
 			Name:      "db_query_duration_seconds",
 			Help:      "Duration of database queries by operation",
-			// Skewed low; the default buckets barely resolve sub-millisecond.
-			Buckets: []float64{0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+			Buckets:   []float64{0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 		},
 		[]string{"operation"},
 	)
@@ -70,7 +62,6 @@ var (
 	registeredDriversMu sync.Mutex
 )
 
-// SetSlowQueryThreshold adjusts the slow-query threshold at runtime.
 func SetSlowQueryThreshold(d time.Duration) {
 	if d <= 0 {
 		d = defaultSlowQueryThreshold
@@ -82,9 +73,6 @@ func slowQueryThreshold() time.Duration {
 	return time.Duration(slowQueryThresholdNanos.Load())
 }
 
-// profilingDriverName registers a timing wrapper around driver and returns the
-// name to open instead. The base driver is recovered via a DSN-less sql.Open,
-// which does not connect.
 func profilingDriverName(baseDriver string) (string, error) {
 	registeredDriversMu.Lock()
 	defer registeredDriversMu.Unlock()
@@ -121,14 +109,12 @@ func registerProfilingMetrics() error {
 	return registerProfilingErr
 }
 
-// observe records one statement's outcome.
 func observe(query string, start time.Time, err error) {
 	op := classify(query)
 	elapsed := time.Since(start)
 
 	queryDuration.WithLabelValues(op).Observe(elapsed.Seconds())
 
-	// ErrSkip is the driver declining a fast path, not a failure.
 	if err != nil && err != driver.ErrSkip {
 		queryErrors.WithLabelValues(op).Inc()
 	}
@@ -143,8 +129,6 @@ func observe(query string, start time.Time, err error) {
 	}
 }
 
-// classify buckets a statement by leading keyword, keeping the label a small
-// closed set.
 func classify(query string) string {
 	keyword, _, _ := strings.Cut(strings.TrimLeft(query, " \t\r\n("), " ")
 
@@ -158,27 +142,15 @@ func classify(query string) string {
 	case "delete":
 		return "delete"
 	case "with":
-		// Nebraska's CTEs (the instance list and the timeline queries) are all
-		// reads. A data-modifying CTE would be misfiled here, but there are
-		// none, and a read is a more useful default than a catch-all.
 		return "select"
 	default:
 		return "other"
 	}
 }
 
-// collapseWhitespace makes a multi-line query readable on one log line. Several
-// of Nebraska's queries are long formatted blocks.
 func collapseWhitespace(query string) string {
 	return strings.Join(strings.Fields(query), " ")
 }
-
-// --- driver wrappers ---
-//
-// Each wrapper implements the optional interface only if the wrapped value
-// does. Claiming an interface the base driver lacks would push database/sql
-// onto its Prepare fallback path and add a round trip per query, which would
-// be a perverse outcome for profiling code.
 
 type profilingDriver struct{ base driver.Driver }
 
@@ -248,9 +220,6 @@ func (c *profilingConn) ExecContext(ctx context.Context, query string, args []dr
 	return res, err
 }
 
-// Ping is forwarded so that dbconn.Open still verifies the database is
-// actually reachable. Without it, database/sql's Ping degrades to merely
-// acquiring a connection and Open would succeed against a dead server.
 func (c *profilingConn) Ping(ctx context.Context) error {
 	pinger, ok := c.base.(driver.Pinger)
 	if !ok {

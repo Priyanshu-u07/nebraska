@@ -75,19 +75,11 @@ export default function VersionCountTimeline(props: VersionCountTimelineProps) {
     const versions: string[] = [];
 
     Object.keys(Object.values(timeline)[0]).forEach(version => {
-      // Validate on the cleaned version, but keep the raw one. The timeline
-      // returned by the API is keyed by the raw version, so a cleaned key
-      // ("3510.2.0" for "3510.2.0+test") matches nothing in the data: the
-      // chart series comes out empty and the table shows a blank count and
-      // 0.0%. Keeping the raw key also stops 1.2.3+aws and 1.2.3+azure from
-      // collapsing into one series.
       if (semver.valid(cleanSemverVersion(version))) {
         versions.push(version);
       }
     });
 
-    // Sort versions (earliest first). Compared on the cleaned form because
-    // semver.compare rejects a raw string it considers invalid.
     versions.sort((version1, version2) => {
       return semver.compare(cleanSemverVersion(version1), cleanSemverVersion(version2));
     });
@@ -185,12 +177,6 @@ export default function VersionCountTimeline(props: VersionCountTimelineProps) {
     return () => {
       canceled = true;
     };
-    // Depends on the group's identity as well as the duration. Navigating
-    // between two group pages keeps the same duration object, so with
-    // [duration] alone the effect never reran and the chart kept showing the
-    // previous group's data. Keyed on the ids rather than the group object
-    // because the store hands out a fresh object on every change, which would
-    // turn this into a refetch loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duration, props.group?.id, props.group?.application_id]);
 

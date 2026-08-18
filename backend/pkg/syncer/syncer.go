@@ -239,8 +239,6 @@ func (s *Syncer) checkForUpdates() error {
 			}
 			observeCheck(descriptor, start, nil)
 		} else {
-			// No update available is a successful check, not a failure: the
-			// syncer reached upstream and got a well-formed answer.
 			observeCheck(descriptor, start, nil)
 			l.Debug().Str("channel", descriptor.name).Str("arch", descriptor.arch.String()).Str("currentVersion", currentVersion).Msgf("checkForUpdates, no update available updateStatus %v", update.Status)
 		}

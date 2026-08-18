@@ -14,18 +14,6 @@ import (
 )
 
 const (
-	// validityInterval is how long an instance may go without checking in
-	// before the reporting queries stop counting it as active.
-	//
-	// The windows built from it use plain now(), not "now() at time zone
-	// 'utc'". The latter looks like it means "the current time in UTC", but it
-	// strips the zone and yields a bare timestamp; comparing that back against
-	// a timestamptz column makes Postgres reinterpret it in the *session*
-	// timezone, shifting every window by the session's UTC offset. Both
-	// last_check_for_updates and last_update_granted_ts are timestamptz, so on
-	// a session running in Asia/Kolkata this window silently became 29.5 hours
-	// and in America/New_York 20 hours. Plain now() is already an absolute
-	// instant and needs no conversion.
 	validityInterval     postgresDuration = "1 days"
 	defaultStatsInterval time.Duration    = 24 * time.Hour
 )
@@ -245,12 +233,6 @@ func prepareInstanceAppQuery() *goqu.SelectDataset {
 		Select("version", "status", "last_check_for_updates", "last_update_version", "update_in_progress", "application_id", "group_id", "instance_id")
 }
 
-// selectInstanceCTEColumns fixes the column list, and therefore the column
-// order, of the Instance CTE. The final query is a SELECT * over
-// "Instance JOIN application", so these columns are emitted first and in this
-// order, and the positional rows.Scan in GetInstances must match them one for
-// one. Both GetInstances and GetInstancesCount go through here so the two
-// cannot drift apart.
 func selectInstanceCTEColumns(ds *goqu.SelectDataset) *goqu.SelectDataset {
 	return ds.Select("id", "ip", "created_ts",
 		goqu.Case().When(goqu.C("alias").Neq(""), goqu.C("alias")).Else(goqu.C("id")).As("alias"),

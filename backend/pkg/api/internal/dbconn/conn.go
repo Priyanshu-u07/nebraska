@@ -21,8 +21,6 @@ type Conn struct {
 }
 
 // Open opens the database connection, verifies it is reachable and applies the
-// pool limits. When profiling.Enabled, statements are routed through an
-// instrumented driver that times them; see profiling.go.
 func Open(driver string, url string, pool PoolConfig, profiling ProfilingConfig) (*Conn, error) {
 	if profiling.Enabled {
 		if err := registerProfilingMetrics(); err != nil {

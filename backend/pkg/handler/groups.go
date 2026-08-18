@@ -243,7 +243,6 @@ func (h *Handler) GetGroupOEMBreakdown(ctx echo.Context, _ string, groupID strin
 	}
 
 	if len(oemBreakdown) == 0 {
-		// WAT?: because otherwise it serializes to null not []
 		return ctx.JSON(http.StatusOK, []string{})
 	}
 	return ctx.JSON(http.StatusOK, oemBreakdown)

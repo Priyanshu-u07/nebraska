@@ -111,9 +111,7 @@ export interface Instance {
   alias: string;
   created_ts: string | Date | number;
   ip: string;
-  /** OEM/platform reported on check-in. Empty string means none was reported. */
   oem: string;
-  /** Version the instance was originally provisioned with. */
   aleph_version: string;
   application: InstanceApplication;
   statusInfo?: ReturnType<typeof getInstanceStatus>;

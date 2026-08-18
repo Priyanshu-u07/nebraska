@@ -306,13 +306,6 @@ func (q *Queries) GetGroupVersionBreakdown(groupID string) ([]*types.VersionBrea
 		return nil, err
 	}
 
-	// The percentage denominator is a window function over the same filtered
-	// rows, not a separate totals sub-select. It used to be the latter, and
-	// that sub-select omitted the fake-instance filter that the outer query
-	// applies: the numerator counted only real instances while the denominator
-	// counted real and bracketed ones together, so every percentage came out
-	// low and a group with any bracketed instances never added up to 100.
-	// Computing both sides from one set removes the second place to forget it.
 	query := fmt.Sprintf(`
 	SELECT version, count(*) as instances,
 	       count(*) * 100.0 / sum(count(*)) OVER () as percentage
@@ -340,21 +333,9 @@ func (q *Queries) GetGroupVersionBreakdown(groupID string) ([]*types.VersionBrea
 	return entryList, nil
 }
 
-// GetGroupOEMBreakdown returns the OEM/platform breakdown of the instances
-// running on a given group. instance.oem is recorded by the Omaha handler on
-// every check-in; instances that report no OEM are bucketed under "unknown".
-//
-// The percentage is computed with a window function over the same filtered
-// rows, so the values always add up to 100. GetGroupVersionBreakdown instead
-// divides by a totals sub-select that does not apply the fake-instance filter,
-// which is why its percentages can add up to less than 100.
 func (q *Queries) GetGroupOEMBreakdown(groupID string) ([]*types.OEMBreakdownEntry, error) {
 	var entryList []*types.OEMBreakdownEntry
 
-	// GROUP BY/ORDER BY use ordinals on purpose: a bare "oem" would resolve to
-	// the input column instance.oem, so an instance that literally reported
-	// oem='unknown' would produce a second, separate row also labelled
-	// "unknown".
 	query := fmt.Sprintf(`
 	SELECT
 		COALESCE(NULLIF(i.oem, ''), 'unknown') AS oem,
@@ -588,10 +569,6 @@ func (q *Queries) GetGroupVersionCountTimeline(groupID string, duration string) 
 		if err != nil {
 			return err
 		}
-		// database/sql only frees the connection by itself once Next() has
-		// walked to the end of the result set. A StructScan error below returns
-		// early, so without this the pooled connection stays checked out for
-		// the lifetime of the process.
 		defer versionAggRows.Close()
 
 		for versionAggRows.Next() {
@@ -603,9 +580,6 @@ func (q *Queries) GetGroupVersionCountTimeline(groupID string, duration string) 
 			versionCounts = append(versionCounts, vc)
 		}
 
-		// Without this, a query that fails part way through iteration is
-		// indistinguishable from one that finished, and the caller gets partial
-		// counts reported as a success.
 		return versionAggRows.Err()
 	})
 

@@ -15,16 +15,6 @@ import { useTranslation } from 'react-i18next';
 
 import { PlatformData } from './usePlatformData';
 
-/**
- * Alert rules over the OEM/rollout metrics proposed in flatcar/Flatcar#2239.
- *
- * Nebraska deliberately does not become an alerting system: there is no
- * notifier, no alert state machine and no silencing here. What this panel does
- * is publish the Prometheus rules that go with the new metrics, and evaluate
- * them against the group's current data so an operator can see which of them
- * would be firing right now before wiring anything into Alertmanager.
- */
-
 type Severity = 'critical' | 'warning' | 'info';
 
 interface RuleDef {
@@ -33,11 +23,9 @@ interface RuleDef {
   forDuration: string;
   summary: (d: PlatformData) => string;
   expr: string;
-  /** Current value of the rule expression, in the unit shown. */
   value: (d: PlatformData) => number;
   threshold: number;
   unit: string;
-  /** True when the rule would be firing. */
   firing: (d: PlatformData) => boolean;
 }
 
@@ -96,8 +84,6 @@ const RULES: RuleDef[] = [
   },
 ];
 
-// Each pair clears 4.5:1, the WCAG AA minimum at this size. #EF6C00, the
-// natural choice for "warning", only manages 3.08:1 against white.
 const SEVERITY_STYLE: { [k in Severity]: { bg: string; fg: string } } = {
   critical: { bg: '#C62828', fg: '#fff' },
   warning: { bg: '#BF360C', fg: '#fff' },

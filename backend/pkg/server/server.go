@@ -149,8 +149,6 @@ func New(conf *config.Config, db *db.API, adminSvc *admin.Service, runtimeSvc *r
 		e.DefaultHTTPErrorHandler(err, c)
 	}
 
-	// Validated in config.Validate, so a failure here is not reachable from a
-	// normally constructed server.
 	retention, err := conf.Retention()
 	if err != nil {
 		return nil, fmt.Errorf("retention config error: %w", err)
@@ -163,11 +161,6 @@ func New(conf *config.Config, db *db.API, adminSvc *admin.Service, runtimeSvc *r
 		if err != nil {
 			l.Err(err).Msg("Error updating instance stats")
 		}
-		// Retention shares this job's hourly tick. A real pass deliberately
-		// does not run at startup: a restart loop would otherwise turn into a
-		// delete loop against a hot table. A dry run does, because it deletes
-		// nothing and an operator who asked for the estimate wants it now
-		// rather than in an hour.
 		if retention.DryRun {
 			pruneOldData(runtimeSvc, retention)
 		}
@@ -186,9 +179,6 @@ func New(conf *config.Config, db *db.API, adminSvc *admin.Service, runtimeSvc *r
 	return e, nil
 }
 
-// pruneOldData applies the retention policy and logs the outcome. Retention is
-// housekeeping, so a failure is logged and the next tick retries rather than
-// taking the server down.
 func pruneOldData(runtimeSvc *runtime.Service, retention config.Retention) {
 	if !retention.Enabled() {
 		return

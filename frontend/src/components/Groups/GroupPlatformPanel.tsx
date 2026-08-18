@@ -17,15 +17,6 @@ import { Group } from '../../api/apiDataTypes';
 import { platformColor, platformLabel, UNKNOWN_OEM } from '../../utils/platforms';
 import { PlatformData, PlatformStatusRow } from './usePlatformData';
 
-/**
- * Platform (OEM) distribution for a group, cross-tabulated against update
- * status so a platform-specific regression is visible from the group page.
- * Aggregated server-side by /oem_breakdown.
- */
-
-// Contrast against the foreground is at least 4.5:1 for every band, which is
-// what WCAG AA requires at these sizes. The obvious mid-band orange (#EF6C00)
-// only reaches 3.08:1 against white.
 function rateColors(rate: number) {
   if (rate >= 20) return { bg: '#C62828', fg: '#fff' };
   if (rate >= 10) return { bg: '#BF360C', fg: '#fff' };
@@ -73,9 +64,6 @@ export default function GroupPlatformPanel({ data, group }: GroupPlatformPanelPr
   const targetVersion = group?.channel?.package?.version || '';
   const { breakdown, matrix, total: instanceCount, failureRate: fleetRate, worst } = data;
 
-  // Memoized so the chart keeps a stable data reference: a fresh array on every
-  // render makes recharts restart its entry animation and the donut never
-  // settles at full size.
   const pieData = React.useMemo(
     () =>
       breakdown.map(entry => ({

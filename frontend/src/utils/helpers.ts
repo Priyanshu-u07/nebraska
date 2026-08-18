@@ -108,11 +108,6 @@ export function makeColorsForVersions(
   for (let i = versions.length - 1; i >= 0; i--) {
     const version = versions[i];
 
-    // Keyed by the version exactly as given, because that is the key the
-    // caller's data is under. Only the comparison against the channel's
-    // package is done on the cleaned form, so that a build-metadata variant
-    // such as 4152.2.3+aws still counts as "the channel's version" for
-    // colouring while keeping its own series.
     if (cleanSemverVersion(version) === latestVersion) {
       versionColors[version] = theme.palette.primary.main;
     } else {

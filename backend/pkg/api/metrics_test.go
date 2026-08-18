@@ -81,10 +81,6 @@ func TestGetAppInstancesPerChannelMetrics(t *testing.T) {
 	require.Equal(t, expectedMetrics, metrics)
 }
 
-// Instances that stopped checking in must age out of the metric. Nothing
-// deletes instance_application rows, so without a window a machine
-// decommissioned years ago keeps contributing while the UI, which does apply
-// the window, reports zero.
 func TestGetAppInstancesPerChannelMetricsExcludesInactiveInstances(t *testing.T) {
 	a := newForTest(t)
 	defer a.Close()
@@ -102,9 +98,6 @@ func TestGetAppInstancesPerChannelMetricsExcludesInactiveInstances(t *testing.T)
 	assert.Empty(t, after, "instances that have not checked in for 400 days must not be counted")
 }
 
-// A group whose channel was deleted (groups.channel_id is "on delete set
-// null") must still have its instances counted, bucketed under "none". An
-// inner join silently dropped them.
 func TestGetAppInstancesPerChannelMetricsKeepsGroupsWithoutChannel(t *testing.T) {
 	a := newForTest(t)
 	defer a.Close()
@@ -151,8 +144,6 @@ func TestGetFailedUpdatesMetrics(t *testing.T) {
 	require.Equal(t, expectedMetrics, metrics)
 }
 
-// Failures older than the window must age out, so that a fleet which has since
-// recovered does not report a permanently elevated failure count.
 func TestGetFailedUpdatesMetricsUsesRecentWindow(t *testing.T) {
 	a := newForTest(t)
 	defer a.Close()
@@ -181,8 +172,6 @@ func TestGetGroupRolloutMetrics(t *testing.T) {
 		assert.NotEmpty(t, m.ApplicationName)
 		assert.NotEmpty(t, m.GroupName)
 
-		// The two identities that make these counters self-consistent, and
-		// which the Grafana queries in docs/metrics.md rely on.
 		assert.Equal(t, m.UpdatesAttempted, m.UpdatesSucceeded+m.UpdatesFailed,
 			"succeeded + failed must equal attempted for group %q", m.GroupName)
 		assert.Equal(t, m.UpdatesGranted,
@@ -193,8 +182,6 @@ func TestGetGroupRolloutMetrics(t *testing.T) {
 	}
 }
 
-// Rollout progress is meaningless for a group that never grants updates, and
-// skipping those keeps the series count proportional to active rollouts.
 func TestGetGroupRolloutMetricsOnlyCoversEnabledGroups(t *testing.T) {
 	a := newForTest(t)
 	defer a.Close()
