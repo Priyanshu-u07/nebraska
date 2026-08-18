@@ -200,6 +200,9 @@ type GroupInstanceStats struct {
 	UpdateGranted int `json:"update_granted"`
 }
 
+// GroupOEMBreakdown defines model for groupOEMBreakdown.
+type GroupOEMBreakdown = []OemBreakdownEntry
+
 // GroupPage defines model for groupPage.
 type GroupPage struct {
 	Count      int     `json:"count"`
@@ -218,11 +221,13 @@ type GroupVersionCountTimeline = map[time.Time]map[string]uint64
 
 // Instance defines model for instance.
 type Instance struct {
-	Alias       *string              `json:"alias,omitempty"`
-	Application *InstanceApplication `json:"application"`
-	CreatedTs   time.Time            `json:"created_ts"`
-	Id          string               `json:"id"`
-	Ip          string               `json:"ip"`
+	AlephVersion *string              `json:"aleph_version"`
+	Alias        *string              `json:"alias,omitempty"`
+	Application  *InstanceApplication `json:"application"`
+	CreatedTs    time.Time            `json:"created_ts"`
+	Id           string               `json:"id"`
+	Ip           string               `json:"ip"`
+	Oem          *string              `json:"oem,omitempty"`
 }
 
 // InstanceApplication defines model for instanceApplication.
@@ -259,6 +264,13 @@ type InstanceStatusHistory struct {
 	ErrorCode string    `db:"error_code" json:"error_code"`
 	Status    int       `json:"status"`
 	Verison   string    `json:"verison"`
+}
+
+// OemBreakdownEntry defines model for oemBreakdownEntry.
+type OemBreakdownEntry struct {
+	Instances  int     `json:"instances"`
+	Oem        string  `json:"oem"`
+	Percentage float64 `json:"percentage"`
 }
 
 // OmahaRequest defines model for omahaRequest.

@@ -17,6 +17,7 @@ import { makeLocaleTime } from '../../i18n/dateTime';
 import chevronDown from '../../icons/mdi/chevron-down.json';
 import chevronUp from '../../icons/mdi/chevron-up.json';
 import { cleanSemverVersion } from '../../utils/helpers';
+import { instanceOEM, platformColor, platformLabel, UNKNOWN_OEM } from '../../utils/platforms';
 import StatusHistoryContainer from './StatusHistoryContainer';
 
 const PREFIX = 'Item';
@@ -107,6 +108,7 @@ function Item(props: ItemProps) {
   const searchParams = new URLSearchParams(window.location.search).toString();
   const instancePath = `/apps/${appID}/groups/${groupID}/instances/${instanceID}?${searchParams}`;
   const instanceName = props.instance.alias || props.instance.id;
+  const oem = instanceOEM(props.instance);
 
   return (
     <>
@@ -117,6 +119,28 @@ function Item(props: ItemProps) {
           </Link>
         </TableCell>
         <TableCell>{props.instance.ip}</TableCell>
+        <TableCell>
+          <Box display="flex" alignItems="center" gap={1}>
+            <Box
+              sx={{
+                width: 9,
+                height: 9,
+                borderRadius: '50%',
+                bgcolor: platformColor(oem),
+                flexShrink: 0,
+              }}
+            />
+            <Box
+              component="span"
+              sx={{
+                color: oem !== UNKNOWN_OEM ? 'text.primary' : 'text.disabled',
+                fontStyle: oem !== UNKNOWN_OEM ? 'normal' : 'italic',
+              }}
+            >
+              {platformLabel(oem)}
+            </Box>
+          </Box>
+        </TableCell>
         <TableCell>{instanceLabel}</TableCell>
         <TableCell>
           <span className={'box--' + versionStyle}>{version}</span>
@@ -139,7 +163,7 @@ function Item(props: ItemProps) {
         </TableCell>
       </StyledTableRow>
       <TableRow>
-        <TableCell padding="none" colSpan={5}>
+        <TableCell padding="none" colSpan={6}>
           <Collapse in={props.selected}>
             <StatusHistoryContainer statusHistory={statusHistory} />
           </Collapse>

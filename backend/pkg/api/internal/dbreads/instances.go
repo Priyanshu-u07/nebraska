@@ -14,6 +14,18 @@ import (
 )
 
 const (
+	// validityInterval is how long an instance may go without checking in
+	// before the reporting queries stop counting it as active.
+	//
+	// The windows built from it use plain now(), not "now() at time zone
+	// 'utc'". The latter looks like it means "the current time in UTC", but it
+	// strips the zone and yields a bare timestamp; comparing that back against
+	// a timestamptz column makes Postgres reinterpret it in the *session*
+	// timezone, shifting every window by the session's UTC offset. Both
+	// last_check_for_updates and last_update_granted_ts are timestamptz, so on
+	// a session running in Asia/Kolkata this window silently became 29.5 hours
+	// and in America/New_York 20 hours. Plain now() is already an absolute
+	// instant and needs no conversion.
 	validityInterval     postgresDuration = "1 days"
 	defaultStatsInterval time.Duration    = 24 * time.Hour
 )
@@ -183,8 +195,7 @@ func (q *Queries) GetInstances(p types.InstancesQueryParams, duration string) (t
 	sortFilter := sanitizeSortFilterParams(p.SortFilter)
 	sortOrder := sortOrderFromString(p.SortOrder)
 	instancesQuery := q.instancesQuery(p, dbDuration)
-	instancesQuery = instancesQuery.Select("id", "ip", "created_ts", goqu.Case().
-		When(goqu.C("alias").Neq(""), goqu.C("alias")).Else(goqu.C("id")).As("alias"))
+	instancesQuery = selectInstanceCTEColumns(instancesQuery)
 
 	instanceAppQuery := prepareInstanceAppQuery()
 	finalQuery := prepareGetInstancesQuery(instancesQuery, instanceAppQuery)
@@ -211,6 +222,7 @@ func (q *Queries) GetInstances(p types.InstancesQueryParams, duration string) (t
 	for rows.Next() {
 		var instance types.Instance
 		err = rows.Scan(&instance.ID, &instance.IP, &instance.CreatedTs, &instance.Alias,
+			&instance.OEM, &instance.AlephVersion,
 			&instance.Application.Version, &instance.Application.Status, &instance.Application.LastCheckForUpdates,
 			&instance.Application.LastUpdateVersion, &instance.Application.UpdateInProgress,
 			&instance.Application.ApplicationID, &instance.Application.GroupID, &instance.Application.InstanceID)
@@ -232,6 +244,18 @@ func prepareInstanceAppQuery() *goqu.SelectDataset {
 	return goqu.From("instance_application").
 		Select("version", "status", "last_check_for_updates", "last_update_version", "update_in_progress", "application_id", "group_id", "instance_id")
 }
+
+// selectInstanceCTEColumns fixes the column list, and therefore the column
+// order, of the Instance CTE. The final query is a SELECT * over
+// "Instance JOIN application", so these columns are emitted first and in this
+// order, and the positional rows.Scan in GetInstances must match them one for
+// one. Both GetInstances and GetInstancesCount go through here so the two
+// cannot drift apart.
+func selectInstanceCTEColumns(ds *goqu.SelectDataset) *goqu.SelectDataset {
+	return ds.Select("id", "ip", "created_ts",
+		goqu.Case().When(goqu.C("alias").Neq(""), goqu.C("alias")).Else(goqu.C("id")).As("alias"),
+		"oem", "aleph_version")
+}
 func (q *Queries) GetInstancesCount(p types.InstancesQueryParams, duration string) (int, error) {
 	var err error
 
@@ -241,8 +265,7 @@ func (q *Queries) GetInstancesCount(p types.InstancesQueryParams, duration strin
 		return 0, err
 	}
 	instancesQuery := q.instancesQuery(p, dbDuration)
-	instancesQuery = instancesQuery.Select("id", "ip", "created_ts", goqu.Case().
-		When(goqu.C("alias").Neq(""), goqu.C("alias")).Else(goqu.C("id")).As("alias"))
+	instancesQuery = selectInstanceCTEColumns(instancesQuery)
 
 	instanceAppQuery := prepareInstanceAppQuery()
 	finalQuery := prepareGetInstancesQuery(instancesQuery, instanceAppQuery)
@@ -255,7 +278,7 @@ func (q *Queries) GetInstancesCount(p types.InstancesQueryParams, duration strin
 // of the app identified by the application id provided for a given instance.
 func (q *Queries) instanceAppQuery(appID, instanceID string, duration postgresDuration, sortFilter string, orderOfSort sortOrder) *goqu.SelectDataset {
 	query := prepareInstanceAppQuery().Where(goqu.C("application_id").Eq(appID)).
-		Where(goqu.L("last_check_for_updates > now() at time zone 'utc' - interval ?", duration))
+		Where(goqu.L("last_check_for_updates > now() - interval ?", duration))
 
 	if instanceID != "" {
 		query = query.Where(goqu.C("instance_id").Eq(instanceID))
@@ -280,7 +303,7 @@ func (q *Queries) getFilterInstancesQuery(selectPart exp.LiteralExpression, p ty
 	query := goqu.From("instance_application").
 		Select(selectPart).
 		Where(goqu.C("application_id").Eq(p.ApplicationID), goqu.C("group_id").Eq(p.GroupID)).
-		Where(goqu.L("last_check_for_updates > now() at time zone 'utc' - interval ?", duration),
+		Where(goqu.L("last_check_for_updates > now() - interval ?", duration),
 			goqu.L(ignoreFakeInstanceCondition("instance_id")))
 
 	if p.Status == types.InstanceStatusUndefined {

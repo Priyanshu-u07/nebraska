@@ -45,6 +45,15 @@ type VersionBreakdownEntry struct {
 	Percentage float64 `db:"percentage" json:"percentage"`
 }
 
+// OEMBreakdownEntry represents the distribution of the OEM/platform reported by
+// the instances belonging to a given group. Instances that report no OEM are
+// bucketed under "unknown".
+type OEMBreakdownEntry struct {
+	OEM        string  `db:"oem" json:"oem"`
+	Instances  int     `db:"instances" json:"instances"`
+	Percentage float64 `db:"percentage" json:"percentage"`
+}
+
 type VersionCountTimelineEntry struct {
 	Time    time.Time `db:"ts" json:"time"`
 	Version string    `db:"version" json:"version"`

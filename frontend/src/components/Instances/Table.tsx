@@ -91,6 +91,7 @@ function Table(props: {
           >
             {t('instances|ip')}
           </TableCellWithSortButtons>
+          <TableCell>{t('instances|platform')}</TableCell>
           <TableCell>{t('instances|current_status')}</TableCell>
           <TableCell>{t('instances|version')}</TableCell>
           <TableCellWithSortButtons

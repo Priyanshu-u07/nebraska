@@ -247,10 +247,10 @@ func (q *Queries) GetGroupUpdatesStats(group *types.Group) (*types.UpdatesStats,
 		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'false' and last_update_version = ? then 1 else 0 end", packageVersion)), 0).As("updates_to_current_version_attempted"),
 		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'false' and last_update_version = ? and last_update_version = version then 1 else 0 end", packageVersion)), 0).As("updates_to_current_version_succeeded"),
 		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'false' and last_update_version = ? and last_update_version != version then 1 else 0 end", packageVersion)), 0).As("updates_to_current_version_failed"),
-		goqu.COALESCE(goqu.SUM(goqu.L("case when last_update_granted_ts > now() at time zone 'utc' - interval ? then 1 else 0 end", group.PolicyPeriodInterval)), 0).As("updates_granted_in_last_period"),
-		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'true' and now() at time zone 'utc' - last_update_granted_ts <= interval ? then 1 else 0 end", group.PolicyUpdateTimeout)), 0).As("updates_in_progress"),
-		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'true' and now() at time zone 'utc' - last_update_granted_ts > interval ? then 1 else 0 end", group.PolicyUpdateTimeout)), 0).As("updates_timed_out"),
-	).Where(goqu.C("group_id").Eq(group.ID), goqu.L("last_check_for_updates > now() at time zone 'utc' - interval ?", validityInterval),
+		goqu.COALESCE(goqu.SUM(goqu.L("case when last_update_granted_ts > now() - interval ? then 1 else 0 end", group.PolicyPeriodInterval)), 0).As("updates_granted_in_last_period"),
+		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'true' and now() - last_update_granted_ts <= interval ? then 1 else 0 end", group.PolicyUpdateTimeout)), 0).As("updates_in_progress"),
+		goqu.COALESCE(goqu.SUM(goqu.L("case when update_in_progress = 'true' and now() - last_update_granted_ts > interval ? then 1 else 0 end", group.PolicyUpdateTimeout)), 0).As("updates_timed_out"),
+	).Where(goqu.C("group_id").Eq(group.ID), goqu.L("last_check_for_updates > now() - interval ?", validityInterval),
 		goqu.L(ignoreFakeInstanceCondition("instance_id")),
 	).ToSQL()
 	if err != nil {
@@ -306,15 +306,19 @@ func (q *Queries) GetGroupVersionBreakdown(groupID string) ([]*types.VersionBrea
 		return nil, err
 	}
 
+	// The percentage denominator is a window function over the same filtered
+	// rows, not a separate totals sub-select. It used to be the latter, and
+	// that sub-select omitted the fake-instance filter that the outer query
+	// applies: the numerator counted only real instances while the denominator
+	// counted real and bracketed ones together, so every percentage came out
+	// low and a group with any bracketed instances never added up to 100.
+	// Computing both sides from one set removes the second place to forget it.
 	query := fmt.Sprintf(`
-	SELECT version, count(*) as instances, (count(*) * 100.0 / total) as percentage
-	FROM instance_application, (
-		SELECT count(*) as total
-		FROM instance_application
-		WHERE group_id=$1 AND last_check_for_updates > now() at time zone 'utc' - interval '%[1]s'
-		) totals
-	WHERE group_id=$1 AND last_check_for_updates > now() at time zone 'utc' - interval '%[1]s' AND %[2]s
-	GROUP BY version, total
+	SELECT version, count(*) as instances,
+	       count(*) * 100.0 / sum(count(*)) OVER () as percentage
+	FROM instance_application
+	WHERE group_id=$1 AND last_check_for_updates > now() - interval '%[1]s' AND %[2]s
+	GROUP BY version
 	ORDER BY %[3]s DESC
 	`, validityInterval, ignoreFakeInstanceCondition("instance_id"), semverExpr)
 	rows, err := q.db.Queryx(query, groupID)
@@ -326,6 +330,53 @@ func (q *Queries) GetGroupVersionBreakdown(groupID string) ([]*types.VersionBrea
 		var entry types.VersionBreakdownEntry
 		err := rows.StructScan(&entry)
 		if err != nil {
+			return nil, err
+		}
+		entryList = append(entryList, &entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return entryList, nil
+}
+
+// GetGroupOEMBreakdown returns the OEM/platform breakdown of the instances
+// running on a given group. instance.oem is recorded by the Omaha handler on
+// every check-in; instances that report no OEM are bucketed under "unknown".
+//
+// The percentage is computed with a window function over the same filtered
+// rows, so the values always add up to 100. GetGroupVersionBreakdown instead
+// divides by a totals sub-select that does not apply the fake-instance filter,
+// which is why its percentages can add up to less than 100.
+func (q *Queries) GetGroupOEMBreakdown(groupID string) ([]*types.OEMBreakdownEntry, error) {
+	var entryList []*types.OEMBreakdownEntry
+
+	// GROUP BY/ORDER BY use ordinals on purpose: a bare "oem" would resolve to
+	// the input column instance.oem, so an instance that literally reported
+	// oem='unknown' would produce a second, separate row also labelled
+	// "unknown".
+	query := fmt.Sprintf(`
+	SELECT
+		COALESCE(NULLIF(i.oem, ''), 'unknown') AS oem,
+		count(*) AS instances,
+		count(*) * 100.0 / sum(count(*)) OVER () AS percentage
+	FROM instance_application ia
+		JOIN instance i ON i.id = ia.instance_id
+	WHERE ia.group_id = $1
+		AND ia.last_check_for_updates > now() - interval '%[1]s'
+		AND %[2]s
+	GROUP BY 1
+	ORDER BY 2 DESC, 1 ASC
+	`, validityInterval, ignoreFakeInstanceCondition("ia.instance_id"))
+
+	rows, err := q.db.Queryx(query, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entry types.OEMBreakdownEntry
+		if err := rows.StructScan(&entry); err != nil {
 			return nil, err
 		}
 		entryList = append(entryList, &entry)
@@ -373,7 +424,7 @@ func (q *Queries) GetGroupInstancesStats(groupID, duration string) (*types.Insta
 		goqu.COALESCE(goqu.SUM(goqu.L("case when status = ? then 1 else 0 end", types.InstanceStatusDownloaded)), 0).As("downloaded"),
 		goqu.COALESCE(goqu.SUM(goqu.L("case when status = ? then 1 else 0 end", types.InstanceStatusDownloading)), 0).As("downloading"),
 		goqu.COALESCE(goqu.SUM(goqu.L("case when status = ? then 1 else 0 end", types.InstanceStatusOnHold)), 0).As("onhold"),
-	).Where(goqu.C("group_id").Eq(groupID), goqu.L("last_check_for_updates > now() at time zone 'utc' - interval ?", durationString),
+	).Where(goqu.C("group_id").Eq(groupID), goqu.L("last_check_for_updates > now() - interval ?", durationString),
 		goqu.L(ignoreFakeInstanceCondition("instance_id")),
 	).ToSQL()
 	if err != nil {
@@ -491,7 +542,7 @@ func (q *Queries) GetGroupVersionCountTimeline(groupID string, duration string) 
 			timelineEntryEntities = append(timelineEntryEntities, timelineEntryEntity)
 		}
 
-		return nil
+		return rows.Err()
 	})
 
 	instanceWithStatusInInterval := []types.InstanceStatusHistoryEntry{}
@@ -515,7 +566,7 @@ func (q *Queries) GetGroupVersionCountTimeline(groupID string, duration string) 
 			}
 			instanceWithStatusInInterval = append(instanceWithStatusInInterval, rI)
 		}
-		return nil
+		return statusHistoryRows.Err()
 	})
 
 	type versionCount struct {
@@ -537,6 +588,11 @@ func (q *Queries) GetGroupVersionCountTimeline(groupID string, duration string) 
 		if err != nil {
 			return err
 		}
+		// database/sql only frees the connection by itself once Next() has
+		// walked to the end of the result set. A StructScan error below returns
+		// early, so without this the pooled connection stays checked out for
+		// the lifetime of the process.
+		defer versionAggRows.Close()
 
 		for versionAggRows.Next() {
 			vc := versionCount{}
@@ -547,7 +603,10 @@ func (q *Queries) GetGroupVersionCountTimeline(groupID string, duration string) 
 			versionCounts = append(versionCounts, vc)
 		}
 
-		return nil
+		// Without this, a query that fails part way through iteration is
+		// indistinguishable from one that finished, and the caller gets partial
+		// counts reported as a success.
+		return versionAggRows.Err()
 	})
 
 	err = queryWg.Wait()
