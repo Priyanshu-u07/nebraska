@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/basicflag"
@@ -33,6 +36,13 @@ type Config struct {
 	ServerPort          uint   `koanf:"port"`
 	RollbackDBTo        string `koanf:"rollback-db-to"`
 
+	// Data retention. All empty/zero by default, which disables pruning, so an
+	// upgrade never starts deleting an existing deployment's history.
+	InstanceRetention string `koanf:"instance-retention"`
+	HistoryRetention  string `koanf:"history-retention"`
+	StatsRetention    string `koanf:"stats-retention"`
+	RetentionDryRun   bool   `koanf:"retention-dry-run"`
+
 	GhClientID        string `koanf:"gh-client-id"`
 	GhClientSecret    string `koanf:"gh-client-secret"`
 	GhSessionAuthKey  string `koanf:"gh-session-secret"`
@@ -54,6 +64,70 @@ type Config struct {
 	OidcUseUserInfo   bool   `koanf:"oidc-use-userinfo"`
 	CAFile            string `koanf:"ca-file"`
 	CACertPool        *x509.CertPool
+}
+
+// Retention holds the parsed data-retention windows. A zero duration means
+// that category is not pruned.
+type Retention struct {
+	Instances time.Duration
+	History   time.Duration
+	Stats     time.Duration
+	DryRun    bool
+}
+
+// Enabled reports whether any category is configured to prune.
+func (r Retention) Enabled() bool {
+	return r.Instances > 0 || r.History > 0 || r.Stats > 0
+}
+
+// Retention parses the retention flags.
+func (c *Config) Retention() (Retention, error) {
+	var r Retention
+	var err error
+
+	if r.Instances, err = parseRetention(c.InstanceRetention); err != nil {
+		return r, fmt.Errorf("invalid instance-retention: %w", err)
+	}
+	if r.History, err = parseRetention(c.HistoryRetention); err != nil {
+		return r, fmt.Errorf("invalid history-retention: %w", err)
+	}
+	if r.Stats, err = parseRetention(c.StatsRetention); err != nil {
+		return r, fmt.Errorf("invalid stats-retention: %w", err)
+	}
+	r.DryRun = c.RetentionDryRun
+
+	return r, nil
+}
+
+// parseRetention accepts anything time.ParseDuration does, plus a plain day
+// suffix: retention windows are naturally expressed in days, and "2160h" is
+// not recognisably 90 days to whoever reads the deployment manifest next. An
+// empty value or "0" disables the category.
+func parseRetention(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "0" {
+		return 0, nil
+	}
+
+	var d time.Duration
+	if days, isDays := strings.CutSuffix(value, "d"); isDays {
+		n, err := strconv.Atoi(days)
+		if err != nil {
+			return 0, fmt.Errorf("%q is not a valid number of days", value)
+		}
+		d = time.Duration(n) * 24 * time.Hour
+	} else {
+		parsed, err := time.ParseDuration(value)
+		if err != nil {
+			return 0, err
+		}
+		d = parsed
+	}
+
+	if d < 0 {
+		return 0, fmt.Errorf("%q must not be negative", value)
+	}
+	return d, nil
 }
 
 const (
@@ -98,6 +172,12 @@ func (c *Config) Validate() error {
 		if _, err := os.Stat(c.CAFile); err != nil {
 			return fmt.Errorf("invalid ca-file: %w", err)
 		}
+	}
+
+	// Fail at startup rather than at the first pruning tick an hour later,
+	// where the operator would not be watching.
+	if _, err := c.Retention(); err != nil {
+		return err
 	}
 
 	return nil
@@ -145,6 +225,11 @@ func Parse() (*Config, error) {
 	f.String("api-endpoint-suffix", "", "Additional suffix for the API endpoint to serve Omaha clients on; use a secret to only serve your clients, e.g., mysecret results in /v1/update/mysecret")
 	f.Bool("debug", false, "sets log level to debug")
 	f.Uint("port", 8000, "port to run server")
+
+	f.String("instance-retention", "", "delete instances that have not checked in for this long, and their history (e.g. 90d, 2160h); empty or 0 disables it")
+	f.String("history-retention", "", "delete instance status history and events older than this, even for live instances (e.g. 30d, 720h); empty or 0 disables it")
+	f.String("stats-retention", "", "delete instance_stats rows older than this (e.g. 365d, 8760h); empty or 0 disables it")
+	f.Bool("retention-dry-run", false, "log how many rows retention would delete without deleting anything")
 
 	k := koanf.New(".")
 

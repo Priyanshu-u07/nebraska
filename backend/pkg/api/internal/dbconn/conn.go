@@ -2,6 +2,7 @@
 package dbconn
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -20,8 +21,22 @@ type Conn struct {
 }
 
 // Open opens the database connection, verifies it is reachable and applies the
-// pool limits.
-func Open(driver string, url string, pool PoolConfig) (*Conn, error) {
+// pool limits. When profiling.Enabled, statements are routed through an
+// instrumented driver that times them; see profiling.go.
+func Open(driver string, url string, pool PoolConfig, profiling ProfilingConfig) (*Conn, error) {
+	if profiling.Enabled {
+		if err := registerProfilingMetrics(); err != nil {
+			return nil, fmt.Errorf("cannot register query profiling metrics: %w", err)
+		}
+		SetSlowQueryThreshold(profiling.SlowQueryThreshold)
+
+		profiledDriver, err := profilingDriverName(driver)
+		if err != nil {
+			return nil, err
+		}
+		driver = profiledDriver
+	}
+
 	db, err := sqlx.Open(driver, url)
 	if err != nil {
 		return nil, err

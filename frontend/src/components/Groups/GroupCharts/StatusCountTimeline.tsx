@@ -202,8 +202,11 @@ export default function StatusCountTimeline(props: StatusCountTimelineProps) {
     }
     setSelectedEntry(-1);
     getStatusTimeline(props.group);
+    // See the matching effect in VersionCountTimeline: the group's identity
+    // has to be a dependency or switching groups at the same duration leaves
+    // the previous group's data on screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.duration]);
+  }, [props.duration, props.group?.id, props.group?.application_id]);
 
   return (
     <Grid container alignItems="center" spacing={2}>

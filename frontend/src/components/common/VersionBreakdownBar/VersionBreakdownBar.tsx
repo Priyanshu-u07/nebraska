@@ -134,7 +134,10 @@ function VersionProgressBar(props: { version_breakdown: any; channel: Channel | 
         }
       }
 
-      return data[cleanVersion1] - data[cleanVersion2];
+      // Indexed by the raw version: data is keyed by what the API returned,
+      // so a cleaned key would read undefined for any version carrying build
+      // metadata and the comparison would collapse to NaN.
+      return data[version1] - data[version2];
     });
 
     data['key'] = 'version_breakdown';

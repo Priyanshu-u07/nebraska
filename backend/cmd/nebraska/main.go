@@ -84,6 +84,16 @@ func main() {
 
 	// setup syncer
 	if conf.EnableSyncer {
+		// Registered here rather than at package init so a Nebraska running
+		// with the syncer disabled does not export sync metrics that would sit
+		// at zero forever and look like a broken sync loop. This has to happen
+		// before the := below, which shadows the package name.
+		if err := syncer.RegisterMetrics(); err != nil {
+			l.Fatal().
+				Err(err).
+				Msg("Failed to register syncer metrics")
+		}
+
 		syncer, err := syncer.Setup(conf, db, adminSvc)
 		if err != nil {
 			l.Fatal().

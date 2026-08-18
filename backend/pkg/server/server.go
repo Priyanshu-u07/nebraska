@@ -149,12 +149,27 @@ func New(conf *config.Config, db *db.API, adminSvc *admin.Service, runtimeSvc *r
 		e.DefaultHTTPErrorHandler(err, c)
 	}
 
+	// Validated in config.Validate, so a failure here is not reachable from a
+	// normally constructed server.
+	retention, err := conf.Retention()
+	if err != nil {
+		return nil, fmt.Errorf("retention config error: %w", err)
+	}
+
 	// setup background job for updating instance stats
 	go func() {
 		// update once at startup
 		err = runtimeSvc.UpdateInstanceStats(nil, nil)
 		if err != nil {
 			l.Err(err).Msg("Error updating instance stats")
+		}
+		// Retention shares this job's hourly tick. A real pass deliberately
+		// does not run at startup: a restart loop would otherwise turn into a
+		// delete loop against a hot table. A dry run does, because it deletes
+		// nothing and an operator who asked for the estimate wants it now
+		// rather than in an hour.
+		if retention.DryRun {
+			pruneOldData(runtimeSvc, retention)
 		}
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
@@ -164,10 +179,45 @@ func New(conf *config.Config, db *db.API, adminSvc *admin.Service, runtimeSvc *r
 			if err != nil {
 				l.Err(err).Msg("Error updating instance stats")
 			}
+			pruneOldData(runtimeSvc, retention)
 		}
 	}()
 
 	return e, nil
+}
+
+// pruneOldData applies the retention policy and logs the outcome. Retention is
+// housekeeping, so a failure is logged and the next tick retries rather than
+// taking the server down.
+func pruneOldData(runtimeSvc *runtime.Service, retention config.Retention) {
+	if !retention.Enabled() {
+		return
+	}
+
+	report, err := runtimeSvc.PruneOldData(runtime.RetentionConfig{
+		Instances: retention.Instances,
+		History:   retention.History,
+		Stats:     retention.Stats,
+		DryRun:    retention.DryRun,
+	})
+	if err != nil {
+		l.Err(err).Msg("Error pruning old data")
+		return
+	}
+	if report.Total() == 0 {
+		return
+	}
+
+	event := l.Info().
+		Int64("instances", report.Instances).
+		Int64("statusHistory", report.InstanceStatusEvents).
+		Int64("events", report.Events).
+		Int64("stats", report.Stats)
+	if report.DryRun {
+		event.Msg("Retention dry run: rows that would be deleted")
+		return
+	}
+	event.Msg("Retention: deleted old rows")
 }
 
 func setupAuthenticator(conf config.Config, sessionStore *sessions.Store, defaultTeamID string) (auth.Authenticator, error) {

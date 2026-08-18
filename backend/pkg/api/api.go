@@ -89,10 +89,18 @@ func New(options ...func(*API) error) (*API, error) {
 		connMaxLifetime = dBConnMaxLifetime
 	}
 
+	slowQueryThreshold, err := time.ParseDuration(os.Getenv("NEBRASKA_DB_SLOW_QUERY_THRESHOLD"))
+	if err != nil {
+		slowQueryThreshold = 0 // dbconn applies its default
+	}
+
 	api.conn, err = dbconn.Open(api.dbDriver, api.dbURL, dbconn.PoolConfig{
 		MaxOpenConns:    maxOpenConns,
 		MaxIdleConns:    maxIdleConns,
 		ConnMaxLifetime: time.Duration(connMaxLifetime) * time.Second,
+	}, dbconn.ProfilingConfig{
+		Enabled:            os.Getenv("NEBRASKA_DB_PROFILING") == "true",
+		SlowQueryThreshold: slowQueryThreshold,
 	})
 	if err != nil {
 		return nil, err
