@@ -40,8 +40,8 @@ function GroupLayout() {
     setUpdateGroupModalVisible(false);
   }
 
-  let appName = '';
-  let groupName = '';
+  let appName = '…';
+  let groupName = '…';
 
   const application = _.findWhere(applications, { id: appID });
   let groups: Group[] = [];
