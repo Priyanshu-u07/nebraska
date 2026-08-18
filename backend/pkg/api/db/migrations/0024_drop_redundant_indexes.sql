@@ -1,25 +1,8 @@
 -- +migrate Up
 
--- Six indexes are fully covered by other indexes on the same table, so Postgres
--- can already serve every predicate they support. Five of them sit on
--- instance_application and instance_status_history, which are written on every
--- Omaha check-in and every status change respectively, so each one is pure
--- write amplification that scales with fleet size.
---
--- instance_application_instance_id_application_id_idx is not merely a prefix:
--- it is an exact duplicate of instance_application_pkey, which is also
--- (instance_id, application_id). Migration 0011 added it without noticing that
--- 0001 had already declared the same key, so the table has carried two
--- identical B-trees ever since.
---
--- The rest are leading prefixes of wider indexes added later, in 0013, 0016 and
--- 0020. A B-tree on (a, b, c) serves any predicate on (a) alone, so the narrow
--- index only duplicates work.
---
--- instance_application_instance_id_idx is the oldest of these: the primary key
--- that covers it is declared on line 119 of 0001 and the index is created on
--- line 122 of that same file, so it has been redundant since the first
--- migration.
+-- Six indexes are fully covered by others on the same table. Five sit on
+-- instance_application and instance_status_history, written on every check-in
+-- and status change, so each is write amplification that scales with the fleet.
 
 -- exact duplicate of instance_application_pkey (instance_id, application_id)
 drop index if exists instance_application_instance_id_application_id_idx;

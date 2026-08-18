@@ -5,11 +5,9 @@ import { Instance, OEMBreakdownEntry } from '../../api/apiDataTypes';
 import { instanceOEM, platformLabel } from '../../utils/platforms';
 
 /**
- * Platform reporting data for a group, for flatcar/Flatcar#2239.
- *
- * The distribution comes from the server (GET .../oem_breakdown, one GROUP BY).
- * The status cross-tab is folded from the instance list the page already needs,
- * because there is no status-by-OEM endpoint yet — that is a follow-up.
+ * Platform data for a group. The distribution comes from /oem_breakdown; the
+ * status cross-tab is folded from the instance list, since there is no
+ * status-by-OEM endpoint yet.
  */
 
 /** Mirrors backend/pkg/api/types/instance.go. */
@@ -66,11 +64,8 @@ const EMPTY: PlatformData = {
 };
 
 /**
- * Cross-tabulate update status by platform.
- *
- * `status` is nullable — an instance that has never reported one is neither a
- * success nor a failure, so it is counted separately rather than folded into
- * "complete", which would understate the failure rate.
+ * Cross-tabulate update status by platform. A null status is counted separately
+ * rather than as a success, which would understate the failure rate.
  */
 function statusMatrixFromInstances(instances: Instance[]): PlatformStatusRow[] {
   const rows = new Map<string, PlatformStatusRow>();

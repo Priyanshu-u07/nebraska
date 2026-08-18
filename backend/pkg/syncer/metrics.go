@@ -6,18 +6,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Observability for the sync loop.
-//
-// The syncer is what keeps a self-hosted Nebraska supplied with new Flatcar
-// releases: it polls the public update servers on a timer and creates packages
-// when it finds something new. If those requests start failing — a firewall
-// change, an expired CA bundle, upstream moving — Nebraska simply stops
-// receiving releases. Nothing errors visibly, the dashboard looks healthy, and
-// the only evidence is a line in the debug log.
-//
-// These four metrics make that state alertable. They are labelled by channel
-// and arch to match the syncer's own channelDescriptor, so a single failing
-// channel is distinguishable from a completely dead loop.
+// Metrics for the sync loop. When upstream requests start failing Nebraska
+// silently stops receiving releases: nothing errors and the dashboard still
+// looks healthy. Labelled by channel and arch so one failing channel is
+// distinguishable from a dead loop.
 var (
 	syncerLastSuccessTimestamp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{

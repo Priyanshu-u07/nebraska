@@ -5,48 +5,30 @@ import (
 	"time"
 )
 
-// Retention pruning for the tables that grow with fleet churn.
-//
-// Nebraska has never deleted instance data. instance, instance_application,
-// instance_status_history, event, activity and instance_stats only ever grow,
-// so a machine decommissioned two years ago is still a row with its whole
-// history attached. Fleets that add and remove nodes hourly hit this fast, and
-// the growth feeds back into autovacuum: its thresholds scale with table size,
-// so the bigger these tables get the less often it runs.
-//
-// Retention is off by default. Turning it on is a destructive, irreversible
-// operation on someone else's production data, so it must be an explicit
-// choice, and DryRun exists so an operator can see the blast radius first.
+// Retention pruning for the instance tables, which otherwise only ever grow.
+// Off by default because it deletes irreversibly; DryRun reports what a real
+// pass would remove.
 
 const (
-	// defaultRetentionBatchSize caps how many rows a single DELETE touches.
-	// instance_application is written on every Omaha check-in, so an unbounded
-	// delete would hold row locks across a hot table for the whole scan.
+	// Bounded so a DELETE does not hold row locks across instance_application,
+	// which every Omaha check-in writes.
 	defaultRetentionBatchSize = 1000
 
-	// maxRetentionBatches bounds one pruning pass. A very large backlog is
-	// worked off over successive runs rather than in one long transaction that
-	// blocks check-ins.
+	// A large backlog is worked off over successive runs.
 	maxRetentionBatches = 1000
 )
 
 // RetentionConfig describes what to prune. A zero duration disables that
 // category, which is the default.
 type RetentionConfig struct {
-	// Instances removes instances whose most recent check-in is older than
-	// this, falling back to instance.created_ts for an instance that has never
-	// checked in. instance_application, instance_status_history, event and
-	// activity all declare "references instance (id) on delete cascade", so
-	// deleting the instance takes its history with it.
+	// Instances prunes by last check-in, falling back to created_ts. The child
+	// tables cascade, so deleting an instance takes its history with it.
 	Instances time.Duration
 
-	// History removes instance_status_history and event rows older than this,
-	// independently of whether their instance is still alive. This is what
-	// bounds the history of a long-lived, still-reporting machine.
+	// History bounds the history of a still-reporting machine.
 	History time.Duration
 
-	// Stats removes instance_stats rows older than this. instance_stats is
-	// written hourly by a background job and is a pure time series.
+	// Stats prunes instance_stats, an hourly time series.
 	Stats time.Duration
 
 	// DryRun counts what would be removed and removes nothing.
@@ -76,9 +58,8 @@ func (r RetentionReport) Total() int64 {
 	return r.Instances + r.InstanceStatusEvents + r.Events + r.Stats
 }
 
-// PruneOldData applies the retention policy once. It is safe to call
-// concurrently with normal traffic: work is done in bounded batches, and each
-// batch is an independent statement rather than one long transaction.
+// PruneOldData applies the retention policy once, in bounded batches so it can
+// run alongside normal traffic.
 func (s *Service) PruneOldData(cfg RetentionConfig) (*RetentionReport, error) {
 	report := &RetentionReport{DryRun: cfg.DryRun}
 
@@ -141,8 +122,7 @@ func (s *Service) PruneOldData(cfg RetentionConfig) (*RetentionReport, error) {
 	}
 
 	if cfg.Stats > 0 {
-		// instance_stats has no surrogate key, so batches are addressed by
-		// ctid. That is safe here because each batch re-selects.
+		// No surrogate key, so batches are addressed by ctid.
 		n, err := s.pruneBatched(cfg, batch,
 			`SELECT count(*) FROM instance_stats WHERE timestamp < now() - $1::interval`,
 			`DELETE FROM instance_stats WHERE ctid IN (
@@ -190,10 +170,8 @@ func (s *Service) pruneBatched(cfg RetentionConfig, batch int, countSQL, deleteS
 	return total, nil
 }
 
-// postgresInterval renders a Go duration as a Postgres interval literal. It is
-// expressed in whole seconds so the value is always a plain integer, which
-// keeps it safe to hand to Postgres as a parameter regardless of locale or
-// IntervalStyle.
+// postgresInterval renders a duration in whole seconds, so the value is locale
+// and IntervalStyle independent.
 func postgresInterval(d time.Duration) string {
 	return fmt.Sprintf("%d seconds", int64(d.Seconds()))
 }

@@ -8,21 +8,12 @@ import (
 )
 
 var (
-	// appInstancesPerChannelMetricSQL counts active instances per application,
-	// version, channel and architecture.
+	// Active instances per application, version, channel and arch.
 	//
-	// Three things here are deliberate and were previously wrong:
-	//
-	//   - the last_check_for_updates window. Nothing deletes instance_application
-	//     rows, so without it a machine decommissioned years ago keeps
-	//     contributing to the metric while the UI, which does apply the window,
-	//     reports zero.
-	//   - the LEFT JOIN on channel. groups.channel_id is "on delete set null",
-	//     and an inner join silently drops every instance in a group whose
-	//     channel was deleted.
-	//   - the arch column. channel is unique on (application_id, name, arch) and
-	//     migration 0008 creates arm64 channels reusing the amd64 names, so
-	//     grouping by name alone folds two architectures into one series.
+	// The window matches the UI, which also applies it. The LEFT JOIN keeps
+	// instances whose group lost its channel (channel_id is "on delete set
+	// null"). arch is needed because migration 0008 reuses the amd64 channel
+	// names for arm64.
 	appInstancesPerChannelMetricSQL = fmt.Sprintf(`
 SELECT a.name AS app_name, ia.version AS version,
        COALESCE(c.name, 'none') AS channel_name, c.arch AS arch,
@@ -47,16 +38,9 @@ GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3
 `, validityInterval, ignoreFakeInstanceCondition("ia.instance_id"))
 
-	// failedUpdatesSQL counts UpdateComplete events that reported a failure
-	// (event_type.type = 3, result = 0).
-	//
-	// The window matters: without one this counts every failure ever recorded,
-	// so a fleet that has since recovered still reports a permanently elevated
-	// number and the metric cannot answer "is the current rollout healthy".
-	//
-	// The group comes from instance_application rather than the event, which
-	// only records the application. Rollout policy is enforced per group, so an
-	// application-wide total cannot point at the group that is actually failing.
+	// Failed UpdateComplete events (type 3, result 0) in the recent window, so a
+	// recovered fleet stops reporting. The group comes from instance_application
+	// because the event only records the application.
 	failedUpdatesSQL = fmt.Sprintf(`
 SELECT a.name AS app_name, g.name AS group_name, count(*) AS fail_count
 FROM event e
@@ -71,9 +55,8 @@ GROUP BY 1, 2
 ORDER BY 1, 2
 `, failedUpdatesInterval, ignoreFakeInstanceCondition("e.instance_id"))
 
-	// groupRolloutMetricSQL is the whole-fleet form of GetGroupUpdatesStats:
-	// the same case expressions, evaluated for every group in one pass instead
-	// of one query per group.
+	// The whole-fleet form of GetGroupUpdatesStats: one pass, not one query per
+	// group.
 	//
 	// The policy intervals are per-group columns, so they are read from the row
 	// and cast to interval rather than being interpolated. Effective values come

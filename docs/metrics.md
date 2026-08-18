@@ -138,7 +138,7 @@ NEBRASKA_DB_PROFILING=true
 NEBRASKA_DB_SLOW_QUERY_THRESHOLD=250ms   # optional, this is the default
 ```
 
-Profiling wraps the SQL driver, so it covers every statement Nebraska issues —
+Profiling wraps the SQL driver, so it covers every statement Nebraska issues:
 reads, writes, the Omaha hot path and anything inside a transaction. Queries
 over the threshold are also logged in full:
 

@@ -15,23 +15,9 @@ import (
 	"github.com/flatcar/nebraska/backend/pkg/logger"
 )
 
-// Query profiling.
-//
-// Nebraska exposes connection-pool gauges but nothing about the queries
-// themselves, so there is no way to tell a slow page from a slow query, and no
-// data to justify an index.
-//
-// This instruments the sql/driver rather than the call sites. It costs one
-// wrapper allocation and one time.Since per statement, and in exchange it sees
-// every statement Nebraska issues — reads, writes, the Omaha hot path and
-// anything inside a transaction — without a single query being rewritten. The
-// alternative, wrapping sqlx at each call site, would have to be repeated in
-// dbreads, runtime and admin and would still miss whatever it forgot.
-//
-// The trade is that a driver sees statements, not callers: operations are
-// classified by leading SQL keyword rather than by which Go helper ran them.
-//
-// Disabled by default. Enable with NEBRASKA_DB_PROFILING=true.
+// Query timing at the sql/driver level, so it covers every statement including
+// the Omaha hot path and anything inside a transaction.
+// Off by default; enable with NEBRASKA_DB_PROFILING=true.
 
 const defaultSlowQueryThreshold = 250 * time.Millisecond
 
@@ -40,15 +26,12 @@ var pl = logger.New("dbprofiling")
 // ProfilingConfig configures query profiling.
 type ProfilingConfig struct {
 	Enabled bool
-	// SlowQueryThreshold is the duration above which a query is logged and
-	// counted as slow. Zero means defaultSlowQueryThreshold.
+	// Zero means defaultSlowQueryThreshold.
 	SlowQueryThreshold time.Duration
 }
 
 var (
-	// slowQueryThresholdNanos is read on every query and adjustable at
-	// runtime, so an operator chasing a regression can tighten the threshold
-	// without a restart.
+	// Adjustable at runtime, so the threshold can be tightened without a restart.
 	slowQueryThresholdNanos atomic.Int64
 
 	queryDuration = prometheus.NewHistogramVec(
@@ -56,9 +39,7 @@ var (
 			Namespace: "nebraska",
 			Name:      "db_query_duration_seconds",
 			Help:      "Duration of database queries by operation",
-			// Skewed low: the interesting range for these queries is
-			// sub-millisecond to a few hundred milliseconds, which the default
-			// buckets barely resolve.
+			// Skewed low; the default buckets barely resolve sub-millisecond.
 			Buckets: []float64{0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 		},
 		[]string{"operation"},
@@ -101,12 +82,9 @@ func slowQueryThreshold() time.Duration {
 	return time.Duration(slowQueryThresholdNanos.Load())
 }
 
-// profilingDriverName registers, once per base driver, a driver that delegates
-// to it and times every statement. It returns the name to open instead.
-//
-// The base driver is recovered by opening a DSN-less handle: sql.Open does not
-// connect, so this is cheap, and it keeps the wrapper agnostic to whether
-// Nebraska is built against pgx or lib/pq.
+// profilingDriverName registers a timing wrapper around driver and returns the
+// name to open instead. The base driver is recovered via a DSN-less sql.Open,
+// which does not connect.
 func profilingDriverName(baseDriver string) (string, error) {
 	registeredDriversMu.Lock()
 	defer registeredDriversMu.Unlock()
@@ -150,8 +128,7 @@ func observe(query string, start time.Time, err error) {
 
 	queryDuration.WithLabelValues(op).Observe(elapsed.Seconds())
 
-	// driver.ErrSkip is the driver declining a fast path, not a failure: it
-	// makes database/sql retry via Prepare, which is observed separately.
+	// ErrSkip is the driver declining a fast path, not a failure.
 	if err != nil && err != driver.ErrSkip {
 		queryErrors.WithLabelValues(op).Inc()
 	}
@@ -166,8 +143,8 @@ func observe(query string, start time.Time, err error) {
 	}
 }
 
-// classify buckets a statement by its leading keyword. The label has to stay a
-// small closed set: Prometheus cardinality would explode if raw SQL were used.
+// classify buckets a statement by leading keyword, keeping the label a small
+// closed set.
 func classify(query string) string {
 	keyword, _, _ := strings.Cut(strings.TrimLeft(query, " \t\r\n("), " ")
 

@@ -18,13 +18,9 @@ import { platformColor, platformLabel, UNKNOWN_OEM } from '../../utils/platforms
 import { PlatformData, PlatformStatusRow } from './usePlatformData';
 
 /**
- * Platform (OEM) reporting for a group — the distribution Nebraska records on
- * every check-in but has never displayed, cross-tabulated against update
+ * Platform (OEM) distribution for a group, cross-tabulated against update
  * status so a platform-specific regression is visible from the group page.
- *
- * For flatcar/Flatcar#2239. The distribution is aggregated server-side by
- * GET /api/apps/{app}/groups/{group}/oem_breakdown; only the status cross-tab
- * is still folded client-side from the instance list.
+ * Aggregated server-side by /oem_breakdown.
  */
 
 // Contrast against the foreground is at least 4.5:1 for every band, which is
