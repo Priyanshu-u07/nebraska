@@ -20,9 +20,12 @@ import { CardFeatureLabel, CardHeader, CardLabel } from '../common/Card';
 import MoreMenu from '../common/MoreMenu';
 import TimeIntervalLinks from '../common/TimeIntervalLinks';
 import InstanceStatusArea from '../Instances/Charts';
+import GroupAlertRules from './GroupAlertRules';
 import StatusCountTimeline from './GroupCharts/StatusCountTimeline';
 import VersionCountTimeline from './GroupCharts/VersionCountTimeline';
 import { formatUpdateLimits } from './GroupItem';
+import GroupPlatformPanel from './GroupPlatformPanel';
+import { usePlatformData } from './usePlatformData';
 
 const PREFIX = 'ItemExtended';
 
@@ -67,6 +70,12 @@ function ItemExtended(props: {
 
   const theme = useTheme();
   const { t } = useTranslation();
+
+  const platformData = usePlatformData(
+    props.appID,
+    props.groupID,
+    updateProgressChartDuration.queryValue
+  );
 
   const onChange = React.useCallback(() => {
     const app = applicationsStore().getCachedApplication(props.appID);
@@ -295,6 +304,16 @@ function ItemExtended(props: {
         <Grid size={12}>
           <Divider variant="fullWidth" />
         </Grid>
+        {instancesStats && instancesStats.total > 0 && (
+          <Grid size={12}>
+            <Box padding="2em">
+              <GroupPlatformPanel data={platformData} group={group} />
+            </Box>
+            <Box padding="2em" pt={0}>
+              <GroupAlertRules data={platformData} groupName={group?.name || ''} />
+            </Box>
+          </Grid>
+        )}
         {instancesStats && instancesStats.total > 0 && (
           <Grid container size={12}>
             <Grid

@@ -224,16 +224,24 @@ func (s *Syncer) checkForUpdates() error {
 	for descriptor, currentVersion := range s.versions {
 		l.Debug().Str("channel", descriptor.name).Str("arch", descriptor.arch.String()).Str("currentVersion", currentVersion).Msg("checking for updates")
 
+		start := time.Now()
+
 		update, err := s.doOmahaRequest(descriptor, currentVersion)
 		if err != nil {
+			observeCheck(descriptor, start, err)
 			return err
 		}
 		if update != nil && update.Status == "ok" && len(update.Manifests) > 0 {
 			// processUpdate handles version tracking internally when appropriate
 			if err := s.processUpdate(descriptor, update); err != nil {
+				observeCheck(descriptor, start, err)
 				return err
 			}
+			observeCheck(descriptor, start, nil)
 		} else {
+			// No update available is a successful check, not a failure: the
+			// syncer reached upstream and got a well-formed answer.
+			observeCheck(descriptor, start, nil)
 			l.Debug().Str("channel", descriptor.name).Str("arch", descriptor.arch.String()).Str("currentVersion", currentVersion).Msgf("checkForUpdates, no update available updateStatus %v", update.Status)
 		}
 
@@ -485,6 +493,8 @@ func (s *Syncer) createPackage(
 		}
 		return nil, err
 	}
+
+	observePackageCreated(descriptor)
 
 	return pkg, nil
 }
